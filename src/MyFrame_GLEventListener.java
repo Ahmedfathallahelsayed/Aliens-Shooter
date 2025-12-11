@@ -3,16 +3,12 @@ import javax.media.opengl.GL;
 import javax.media.opengl.GLAutoDrawable;
 import javax.media.opengl.GLEventListener;
 import javax.media.opengl.glu.GLU;
+import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.io.IOException;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.SwingUtilities;
-import java.awt.BorderLayout;
-import java.awt.FlowLayout;
+import javax.swing.*;
+
 import com.sun.opengl.util.GLUT;
 
 public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
@@ -103,6 +99,11 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     int shakeFrames = 0;
     final int SHAKE_MAX = 16;       // frames of shake when hit (tuneable)
     final double SHAKE_MAG = 0.035; // maximum shake magnitude in NDC coordinates (tuneable)
+
+    boolean paused = false;
+    JFrame pauseWindow = null;
+    private GamePanel gamePanel;
+    float volume = 0.5f;
 
     @Override
     public void init(GLAutoDrawable drawable) {
@@ -233,6 +234,8 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
 
     @Override
     public void display(GLAutoDrawable drawable) {
+        if (paused) return;
+
         GL gl = drawable.getGL();
         gl.glClear(GL.GL_COLOR_BUFFER_BIT);
 
@@ -271,139 +274,25 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         drawHud(gl);
 
         // check win condition AFTER aliens updated/removed
-        if(alienCount == 0 && !winShown && !gameOverShown){
+        if (alienCount == 0 && !winShown && !gameOverShown) {
             winShown = true;
-
-            // compute times properly depending on which level finished
-            if(level == 1){
-                // finish level1
+            // احسب زمن المستوى المناسب
+            if (level == 1) {
                 level1Time = System.currentTimeMillis() - level1StartTime;
-                // show window for level1 with its time and Restart/Next buttons (undecorated so X/minimize disabled)
-                SwingUtilities.invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        final JFrame frame = new JFrame("You Win!");
-                        // remove title bar so X/minimize are effectively disabled
-                        frame.setUndecorated(true);
-                        frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-                        frame.setSize(360, 220);
-                        frame.setLocationRelativeTo(null);
-                        frame.setResizable(false);
-
-                        String t1 = formatTime(level1Time);
-                        JLabel label = new JLabel("<html><center>You Win!<br/>Level 1 Time: " + t1 + "</center></html>", JLabel.CENTER);
-                        label.setFont(label.getFont().deriveFont(18f));
-
-                        JButton restartBtn = new JButton("Restart");
-                        restartBtn.setFocusable(false);
-                        restartBtn.addActionListener(e -> {
-                            frame.dispose();
-                            resetGame();
-                        });
-
-                        JButton nextLevelBtn = new JButton("Up To Next Level");
-                        nextLevelBtn.setFocusable(false);
-                        nextLevelBtn.setEnabled(true);
-                        nextLevelBtn.addActionListener(e -> {
-                            frame.dispose();
-                            goToNextLevel();
-                        });
-
-                        JPanel buttonPanel = new JPanel(new FlowLayout());
-                        buttonPanel.add(restartBtn);
-                        buttonPanel.add(nextLevelBtn);
-
-                        JPanel panel = new JPanel(new BorderLayout());
-                        panel.add(label, BorderLayout.CENTER);
-                        panel.add(buttonPanel, BorderLayout.SOUTH);
-                        frame.getContentPane().add(panel);
-                        frame.setVisible(true);
-                    }
-                });
-            } else { // level == 2
-                // finish level2
+            } else {
                 level2Time = System.currentTimeMillis() - level2StartTime;
-                long total = level1Time + level2Time;
-                final String t1 = formatTime(level1Time);
-                final String t2 = formatTime(level2Time);
-                final String tTotal = formatTime(total);
-
-                SwingUtilities.invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        final JFrame frame = new JFrame("You Win!");
-                        frame.setUndecorated(true);
-                        frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-                        frame.setSize(360, 220);
-                        frame.setLocationRelativeTo(null);
-                        frame.setResizable(false);
-
-                        JLabel label = new JLabel(
-                                "<html><center>You Win!<br/>Level 1 Time: " + t1 +
-                                        "<br/>Level 2 Time: " + t2 +
-                                        "<br/>Total Time: " + tTotal + "</center></html>",
-                                JLabel.CENTER);
-                        label.setFont(label.getFont().deriveFont(16f));
-
-                        JButton restartBtn = new JButton("Restart");
-                        restartBtn.setFocusable(false);
-                        restartBtn.addActionListener(e -> {
-                            frame.dispose();
-                            resetGame();
-                        });
-
-                        // Next level button disabled in level2 end (only 2 levels)
-                        JButton nextLevelBtn = new JButton("Up To Next Level");
-                        nextLevelBtn.setFocusable(false);
-                        nextLevelBtn.setEnabled(false);
-
-                        JPanel buttonPanel = new JPanel(new FlowLayout());
-                        buttonPanel.add(restartBtn);
-                        buttonPanel.add(nextLevelBtn);
-
-                        JPanel panel = new JPanel(new BorderLayout());
-                        panel.add(label, BorderLayout.CENTER);
-                        panel.add(buttonPanel, BorderLayout.SOUTH);
-                        frame.getContentPane().add(panel);
-                        frame.setVisible(true);
-                    }
-                });
             }
+            SwingUtilities.invokeLater(this::showWinMenu);
         }
 
-        // Game over check
-        if(health <= 0 && !gameOverShown){
+
+        if (health <= 0 && !gameOverShown) {
+            // اضبط العلم أولًا عشان نقلل احتمالية فتح نوافذ مكررة
             gameOverShown = true;
-            final long l1 = level1Time;
-            final long l2 = level2Time;
-            SwingUtilities.invokeLater(() -> {
-                final JFrame frame = new JFrame("Game Over");
-                frame.setUndecorated(true);
-                frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-                frame.setSize(360, 180);
-                frame.setLocationRelativeTo(null);
-                frame.setResizable(false);
-
-                JLabel label = new JLabel("<html><center>Game Over<br/>You died.</center></html>", JLabel.CENTER);
-                label.setFont(label.getFont().deriveFont(18f));
-
-                JButton restartBtn = new JButton("Restart");
-                restartBtn.setFocusable(false);
-                restartBtn.addActionListener(e -> {
-                    frame.dispose();
-                    resetGame();
-                });
-
-                JPanel buttonPanel = new JPanel(new FlowLayout());
-                buttonPanel.add(restartBtn);
-
-                JPanel panel = new JPanel(new BorderLayout());
-                panel.add(label, BorderLayout.CENTER);
-                panel.add(buttonPanel, BorderLayout.SOUTH);
-                frame.getContentPane().add(panel);
-                frame.setVisible(true);
-            });
+            // اطلب من الـ EDT عرض النافذة المجمّعة
+            SwingUtilities.invokeLater(this::showGameOverMenu);
         }
+
     }
 
     /**
@@ -580,6 +469,12 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             gl.glRasterPos2f(-0.70f, 0.40f);
             glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Total: " + formatTime(total));
         }
+        // --- NEW: Draw "Tap ESC To Menu" bottom-right ---
+        gl.glLoadIdentity();
+        gl.glColor3f(1f,1f,1f);  // white text
+
+        gl.glRasterPos2f(-0.90f, -0.90f);
+        glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Tap ESC To Menu");
 
         // restore matrices
         gl.glMatrixMode(GL.GL_PROJECTION);
@@ -910,6 +805,10 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             case KeyEvent.VK_LEFT: left = true; break;
             case KeyEvent.VK_RIGHT: right = true; break;
             case KeyEvent.VK_SPACE: fire = true; break;
+            case KeyEvent.VK_ESCAPE:
+                if (!paused) showPauseMenu();
+                break;
+
         }
     }
 
@@ -934,4 +833,396 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     private double randNum(double min, double max) {
         return min + Math.random() * (max - min);
     }
+    public void setGamePanel(GamePanel gp){
+        this.gamePanel = gp;
+    }
+    private void showPauseMenu() {
+
+        if (pauseWindow != null) return;
+
+        paused = true;
+
+        pauseWindow = new JFrame("Paused");
+        pauseWindow.setUndecorated(true);
+        pauseWindow.setSize(420, 300);
+        pauseWindow.setLocationRelativeTo(null);
+        pauseWindow.setBackground(new Color(0, 0, 0, 0)); // شفاف
+
+        JPanel container = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                g2.setColor(new Color(30, 30, 30, 200)); // خلفية شفافة
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 25, 25);
+            }
+        };
+
+        container.setLayout(new GridBagLayout());
+        container.setOpaque(false);
+        pauseWindow.add(container);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel title = new JLabel("Paused", JLabel.CENTER);
+        title.setFont(new Font("Arial", Font.BOLD, 26));
+        title.setForeground(Color.WHITE);
+        gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
+        container.add(title, gbc);
+
+        // Label + Slider
+        gbc.gridy = 1;
+        gbc.gridwidth = 1;
+
+        JLabel volumeLabel = new JLabel("Volume:");
+        volumeLabel.setForeground(Color.WHITE);
+        container.add(volumeLabel, gbc);
+
+        JSlider volumeSlider = new JSlider(0, 100, (int)(volume * 100));
+        volumeSlider.setOpaque(false);
+        volumeSlider.setBackground(new Color(0, 0, 0, 0));
+
+        // set initial slider value from global sound manager (in case app used slider elsewhere)
+        volumeSlider.setValue(Math.round(Sound.SoundManager.getGlobalVolume() * 100f));
+
+        volumeSlider.addChangeListener(e -> {
+            float v = volumeSlider.getValue() / 100f;
+            // حدّث المتغيّر المحلي (لو تستخدمه داخل كلاس الـ listener)
+            volume = v;
+
+            // أطّلع في الكونسول (اختياري للتجربة)
+            System.out.println("Current Volume = " + v);
+
+            // فعّل الصوت فعلاً عن طريق SoundManager (يجب أن تكون الدالة موجودة في كلاسك)
+            try {
+                Sound.SoundManager.setGlobalVolume(v);
+            } catch (Throwable ex) {
+                // لا تجعل الخطأ يوقف اللعبة — بس اطبع للاختبار
+                System.err.println("setGlobalVolume failed: " + ex.getMessage());
+            }
+
+            // اختياري: شغّل صوت feedback بسيط عند الإفلات من السحب
+            if (!volumeSlider.getValueIsAdjusting()) {
+                try {
+                    // ضع ملف صغير click.wav داخل Assets اذا حابب
+                    //Sound.SoundManager.playOnce("Assets/click.wav");
+                } catch (Throwable ignore) { }
+            }
+        });
+
+
+        gbc.gridx = 1;
+        container.add(volumeSlider, gbc);
+
+        // Resume Button
+        gbc.gridy = 2;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
+
+        JButton resumeBtn = new JButton("Resume");
+        styleButton(resumeBtn);
+        resumeBtn.addActionListener(e -> {
+            paused = false;
+            pauseWindow.dispose();
+            pauseWindow = null;
+        });
+        container.add(resumeBtn, gbc);
+
+        // Back to menu
+        gbc.gridy = 3;
+        JButton menuBtn = new JButton("Back to Menu");
+        styleButton(menuBtn);
+        menuBtn.addActionListener(e -> {
+            paused = false;
+            pauseWindow.dispose();
+            pauseWindow = null;
+            if (gamePanel != null)
+                gamePanel.returnToMenu();
+        });
+        container.add(menuBtn, gbc);
+
+        pauseWindow.setVisible(true);
+    }
+
+    private void styleButton(JButton btn) {
+        btn.setFocusPainted(false);
+        btn.setFont(new Font("Arial", Font.BOLD, 18));
+
+        Color base = new Color(0xC2A878);   // صحراوي
+        Color hover = new Color(0xD9C7A6);  // افتح صحراوي
+        Color border = new Color(0x7A6240); // بني غامق
+        Color text = new Color(0x3B2F1B);   // بني داكن
+
+        btn.setBackground(base);
+        btn.setForeground(text);
+        btn.setBorder(BorderFactory.createLineBorder(border, 3));
+
+        btn.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                btn.setBackground(hover);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                btn.setBackground(base);
+            }
+        });
+    }
+    // تستدعى من الـ EDT (SwingUtilities.invokeLater)
+    private void showGameOverMenu() {
+        // إذا المينيو مفتوح متفتحش تاني
+        if (pauseWindow != null) return;
+
+        // علشان نمنع تكرار النوافذ
+        gameOverShown = true;
+        paused = true;
+
+        pauseWindow = new JFrame("Game Over");
+        pauseWindow.setUndecorated(true);
+        pauseWindow.setSize(420, 260);
+        pauseWindow.setLocationRelativeTo(null);
+        pauseWindow.setBackground(new Color(0,0,0,0)); // شفاف
+
+        JPanel container = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                // نفس خلفية الـ Pause (غامق وشفاف) مع زوايا مدورة
+                g2.setColor(new Color(30, 30, 30, 200));
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 25, 25);
+            }
+        };
+
+        container.setLayout(new GridBagLayout());
+        container.setOpaque(false);
+        pauseWindow.add(container);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // Title
+        JLabel title = new JLabel("Game Over", JLabel.CENTER);
+        title.setFont(new Font("Arial", Font.BOLD, 26));
+        title.setForeground(Color.WHITE);
+        gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
+        container.add(title, gbc);
+
+        // message (optional)
+        gbc.gridy = 1;
+        JLabel msg = new JLabel("<html><center>You died. Try again!</center></html>", JLabel.CENTER);
+        msg.setFont(new Font("Arial", Font.PLAIN, 14));
+        msg.setForeground(Color.LIGHT_GRAY);
+        container.add(msg, gbc);
+
+        // Restart button
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        JButton restartBtn = new JButton("Restart");
+        restartBtn.setFocusable(false);
+        restartBtn.setRequestFocusEnabled(false);
+        styleButton(restartBtn); // نستخدم نفس دالة الستايل اللي عندك
+        restartBtn.addActionListener(e -> {
+            // اغلق النافذة واعمل reset للعبة
+            pauseWindow.dispose();
+            pauseWindow = null;
+            // resetGame() مضبوط synchronized في كودك
+            resetGame();
+            paused = false;
+            gameOverShown = false;
+        });
+        container.add(restartBtn, gbc);
+
+        // Back to menu
+        gbc.gridy = 3;
+        JButton backBtn = new JButton("Back to Menu");
+        backBtn.setFocusable(false);
+        backBtn.setRequestFocusEnabled(false);
+        styleButton(backBtn);
+        backBtn.addActionListener(e -> {
+            pauseWindow.dispose();
+            pauseWindow = null;
+            paused = false;
+            if (gamePanel != null) {
+                gamePanel.returnToMenu(); // صح — GamePanel يتعامل مع الـ parent داخلياً
+            }
+        });
+
+        container.add(backBtn, gbc);
+
+        pauseWindow.setVisible(true);
+    }
+    private void showWinMenu() {
+
+        if (pauseWindow != null) return;
+
+        winShown = true;
+        paused = true;
+
+        // حساب الوقت لو مش متسجل
+        if (level == 1) {
+            if (level1Time == 0L)
+                level1Time = System.currentTimeMillis() - level1StartTime;
+        } else {
+            if (level2Time == 0L)
+                level2Time = System.currentTimeMillis() - level2StartTime;
+        }
+
+        pauseWindow = new JFrame("You Win!");
+        pauseWindow.setUndecorated(true);
+        pauseWindow.setSize(420, 320);
+        pauseWindow.setLocationRelativeTo(null);
+        pauseWindow.setBackground(new Color(0,0,0,0)); // شفاف
+
+        JPanel container = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(new Color(30, 30, 30, 200));
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 25, 25);
+            }
+        };
+
+        container.setLayout(new GridBagLayout());
+        container.setOpaque(false);
+        pauseWindow.add(container);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(8, 12, 8, 12);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // ---------------------- Title ----------------------
+        JLabel title = new JLabel("You Win!", JLabel.CENTER);
+        title.setFont(new Font("Arial", Font.BOLD, 26));
+        title.setForeground(Color.WHITE);
+        gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
+        container.add(title, gbc);
+
+        // ---------------------- Time Text ----------------------
+        gbc.gridy = 1;
+        String timesHtml;
+
+        if (level == 1) {
+            String t1 = formatTime(level1Time);
+            timesHtml = "<html><center>Level 1 Time: " + t1 + "</center></html>";
+        } else {
+            String t1 = formatTime(level1Time);
+            String t2 = formatTime(level2Time);
+            String tTotal = formatTime(level1Time + level2Time);
+            timesHtml = "<html><center>Level 1: " + t1 +
+                    "<br/>Level 2: " + t2 +
+                    "<br/>Total: " + tTotal + "</center></html>";
+        }
+
+        JLabel timesLabel = new JLabel(timesHtml, JLabel.CENTER);
+        timesLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+        timesLabel.setForeground(Color.LIGHT_GRAY);
+        container.add(timesLabel, gbc);
+
+        // ------------------------------------------------------------
+        //             BUTTONS (Up, Restart, Back)
+        // ------------------------------------------------------------
+
+        // ========== 1) Up To Next Level (فوق) ==========
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+
+        JButton nextBtn = new JButton("Up To Next Level");
+        styleButton(nextBtn);
+        nextBtn.setFocusable(false);
+        nextBtn.setRequestFocusEnabled(false);
+
+        if (level == 1) {
+            nextBtn.setEnabled(true);
+            nextBtn.addActionListener(e -> {
+                pauseWindow.dispose();
+                pauseWindow = null;
+
+                // حفظ وقت level 1 لو مش متسجل
+                if (level1Time == 0L)
+                    level1Time = System.currentTimeMillis() - level1StartTime;
+
+                goToNextLevel();
+                paused = false;
+                winShown = false;
+
+                if (gamePanel != null) {
+                    SwingUtilities.invokeLater(() -> {
+                        gamePanel.glcanvas.requestFocusInWindow();
+                        if(!gamePanel.animator.isAnimating())
+                            gamePanel.animator.start();
+                    });
+                }
+            });
+        } else {
+            nextBtn.setEnabled(false);
+        }
+
+        container.add(nextBtn, gbc);
+
+
+        // ========== 2) Restart (في النص) ==========
+        gbc.gridy = 3;
+
+        JButton restartBtn = new JButton("Restart");
+        styleButton(restartBtn);
+        restartBtn.setFocusable(false);
+        restartBtn.setRequestFocusEnabled(false);
+        restartBtn.addActionListener(e -> {
+            pauseWindow.dispose();
+            pauseWindow = null;
+
+            resetGame();
+            paused = false;
+            winShown = false;
+
+            if (gamePanel != null) {
+                SwingUtilities.invokeLater(() -> {
+                    gamePanel.glcanvas.requestFocusInWindow();
+                    if(!gamePanel.animator.isAnimating())
+                        gamePanel.animator.start();
+                });
+            }
+        });
+
+        container.add(restartBtn, gbc);
+
+
+        // ========== 3) Back to Menu (تحت) ==========
+        gbc.gridy = 4;
+
+        JButton backBtn = new JButton("Back to Menu");
+        backBtn.setFocusable(false);
+        backBtn.setRequestFocusEnabled(false);
+        styleButton(backBtn);
+        backBtn.addActionListener(e -> {
+            pauseWindow.dispose();
+            pauseWindow = null;
+
+            paused = false;
+            winShown = false;
+
+            if (gamePanel != null) {
+                gamePanel.returnToMenu();
+            }
+        });
+
+        container.add(backBtn, gbc);
+
+        pauseWindow.setVisible(true);
+    }
+
 }
+

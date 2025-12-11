@@ -16,7 +16,7 @@ public class BitmapLoader {
         BufferedImage image;
         InputStream input = null;
         try {
-            input = Texture.ResourceRetriever.getResourceAsStream(file);
+            input = ResourceRetriever.getResourceAsStream(file);
 
             int bitmapFileHeaderLength = 14;
             int bitmapInfoHeaderLength = 40;
