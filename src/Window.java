@@ -54,8 +54,7 @@ class Window extends JFrame {
         card.show(screens, "game");
         gamePanel.startGame();
     }
-    // Main.java أو Window constructor
-    // أفضل وضعه داخل main قبل إنشاء الواجهة أو داخل Window constructor
+
 
 
 }

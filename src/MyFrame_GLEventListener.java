@@ -14,7 +14,6 @@ import com.sun.opengl.util.GLUT;
 public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
 
     String assetsFolderName = "Assets";
-    // PowerBar.png should be present in Assets
     String[] textureNames = new String[]{"background.png","Man1.png","Man2.png","Man3.png","Man4.png","ARMM.png","pacman2.png","PowerBar.png"};
     TextureReader.Texture[] texture = new TextureReader.Texture[textureNames.length];
     int[] textureIndex = new int[textureNames.length];
@@ -22,16 +21,12 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     double ManTranslateXValue = 0;
     double ManTranslateYValue = 0;
     int rotateAngleValue = 0;
-    int control = 1; // man sprite index 1..4
-
+    int control = 1;
     double facingX = 0;
     double facingY = 1;
 
-    // animation variables for the man sprites (circular)
     int animCounter = 0;
-    int animDelay = 8; // frames between sprite changes (tuneable)
-
-    // Bullets arrays
+    int animDelay = 8;
     final int MAX_BULLETS = 500;
     double[] bulletsX = new double[MAX_BULLETS];
     double[] bulletsY = new double[MAX_BULLETS];
@@ -40,7 +35,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     int bulletsCount = 0;
     boolean fire = false;
 
-    // shot spacing (holding SPACE)
     int fireDelayFrames = 45;
     int shotCooldown = 0;
 
@@ -52,14 +46,11 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     double[] alienAngle = new double[MAX_ALIENS];
     int alienCount = 0;
 
-    // render scales (adjust per level)
-    double alienRenderScale = 0.1; // level 1 default (used in glScaled and collision)
+    double alienRenderScale = 0.1;
     final double bulletRenderScale = 0.03;
 
-    // game level: 1 or 2 only
     int level = 1;
 
-    // flag to ensure win window shown only once
     boolean winShown = false;
 
     // game over flag
@@ -72,33 +63,25 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     int bulletsShot = 0;
     int fireCounter = 0;
 
-    // ---- Time tracking (ms) ----
     long level1StartTime = 0L;
     long level2StartTime = 0L;
-    long level1Time = 0L; // duration in ms (recorded when leaving level1)
-    long level2Time = 0L; // duration in ms (recorded when finishing level2)
-
-    // GLUT for drawing bitmap text
+    long level1Time = 0L;
+    long level2Time = 0L;
     private GLUT glut = new GLUT();
 
-    // ----- Health system -----
     int healthMax = 100;
     int health = healthMax;
-    int hitCooldownFrames = 0;        // frames of invulnerability after a hit
-    final int HIT_COOLDOWN_MAX = 60;  // ~1 second at 60fps
+    int hitCooldownFrames = 0;
+    final int HIT_COOLDOWN_MAX = 60;
 
-    // PowerBar fill direction:
-    // false => RIGHT-to-LEFT fill (i.e. anchored at right, shrinks leftwards)
+
     boolean powerBarLeftToRight = false;
 
-    // ----- Hit visual effect (flash) -----
     int flashFrames = 0;
-    final int FLASH_MAX = 18; // frames of red flash
-
-    // ----- Screen shake -----
+    final int FLASH_MAX = 18;
     int shakeFrames = 0;
-    final int SHAKE_MAX = 16;       // frames of shake when hit (tuneable)
-    final double SHAKE_MAG = 0.035; // maximum shake magnitude in NDC coordinates (tuneable)
+    final int SHAKE_MAX = 16;
+    final double SHAKE_MAG = 0.035;
 
     boolean paused = false;
     JFrame pauseWindow = null;
@@ -125,20 +108,14 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             }
         }
 
-        // initialize level 1 by default (also starts level1 timer)
         resetGame();
     }
 
-    /**
-     * إعادة تهيئة اللعبة للمستوى 1 (restart).
-     * synchronized عشان نقلل مشاكل التزامن بين Swing EDT و GL thread.
-     */
-    public synchronized void resetGame(){
-        // reset to level 1 default
-        level = 1;
-        alienRenderScale = 0.1; // size normal for level 1
 
-        // reset player
+    public synchronized void resetGame(){
+        level = 1;
+        alienRenderScale = 0.1;
+
         ManTranslateXValue = 0;
         ManTranslateYValue = 0;
         rotateAngleValue = 0;
@@ -147,71 +124,56 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         up = down = left = right = false;
         animCounter = 0;
 
-        // reset bullets
         bulletsCount = 0;
         bulletsShot = 0;
         shotCooldown = 0;
         fire = false;
 
-        // reset aliens for level 1
         alienCount = 20;
         initAliens(alienCount, 0.0012, 0.0006);
 
-        // reset times: start level1 timer now
         level1StartTime = System.currentTimeMillis();
         level1Time = 0L;
         level2StartTime = 0L;
         level2Time = 0L;
 
-        // reset health (ensure Level1 defaults)
         healthMax = 100;
         health = healthMax;
         hitCooldownFrames = 0;
         gameOverShown = false;
 
-        // reset effects
         flashFrames = 0;
         shakeFrames = 0;
 
-        // reset win flag so dialog can show again next time
         winShown = false;
     }
 
-    /**
-     * انتقل للمستوى التالي (level 2). يقلّل حجم الفضائي للنص، يزيد العدد ويزيد السرعة.
-     */
+
     public synchronized void goToNextLevel(){
         if(level != 1) return; // فقط من level1 الى level2
-        // record level1 elapsed time up to this moment
         level1Time = System.currentTimeMillis() - level1StartTime;
 
         level = 2;
-        alienRenderScale = 0.05; // نص الحجم
-        alienCount = 60; // عدد أكبر
-        // أسرع: نزوّد السرعات الأساسية
-        initAliens(alienCount, 0.0025, 0.0015); // base + random range
-        // reset bullets and shot state but keep player pos
+        alienRenderScale = 0.05;
+        alienCount = 60;
+        initAliens(alienCount, 0.0025, 0.0015);
         bulletsCount = 0;
         bulletsShot = 0;
         shotCooldown = 0;
         fire = false;
 
-        // start level2 timer now
         level2StartTime = System.currentTimeMillis();
         level2Time = 0L;
 
         winShown = false;
 
-        // *** Set Level2 health to 300/300 as requested previously ***
         healthMax = 300;
         health = healthMax;
 
-        // reset effects
         flashFrames = 0;
         shakeFrames = 0;
     }
 
-    // helper to initialize aliens with given base speed and random range
     private void initAliens(int count, double baseSpeed, double randRange){
         int zones = 5;
         double zoneWidth = 2.0 / zones;
@@ -222,8 +184,7 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             double worldX = minX + Math.random() * (maxX - minX); // this is in world coords (-1..1)
             double worldY = Math.random() < 0.5 ? 1.2 + Math.random() * 0.2 : -1.2 - Math.random() * 0.2;
 
-            // STORE positions in stored-units so that drawing does: world = alienRenderScale * stored
-            // stored = world / alienRenderScale
+
             alienX[i] = worldX / alienRenderScale;
             alienY[i] = worldY / alienRenderScale;
 
@@ -239,15 +200,12 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         GL gl = drawable.getGL();
         gl.glClear(GL.GL_COLOR_BUFFER_BIT);
 
-        // countdown shot cooldown each frame
         if(shotCooldown > 0) shotCooldown--;
 
-        // cooldown for hit invulnerability
         if(hitCooldownFrames > 0) hitCooldownFrames--;
 
         updateManPositionAndAngle();
 
-        // --- Apply screen shake to the world-rendering (background, man, bullets, aliens)
         gl.glPushMatrix();
         if(shakeFrames > 0){
             double intensity = (double)shakeFrames / (double)SHAKE_MAX; // decays
@@ -262,21 +220,16 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         handleBullets(gl);
         updateAndDrawAliens(gl);
 
-        gl.glPopMatrix(); // stop shaking; HUD & flash drawn without shake
-
-        // draw hit flash overlay (if any) ON TOP of game objects (so player sees the hit)
+        gl.glPopMatrix();
         if(flashFrames > 0){
             drawHitFlash(gl);
             flashFrames--;
         }
 
-        // draw HUD (inside the GL frame) top-right, white, using GLUT
         drawHud(gl);
 
-        // check win condition AFTER aliens updated/removed
         if (alienCount == 0 && !winShown && !gameOverShown) {
             winShown = true;
-            // احسب زمن المستوى المناسب
             if (level == 1) {
                 level1Time = System.currentTimeMillis() - level1StartTime;
             } else {
@@ -287,19 +240,14 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
 
 
         if (health <= 0 && !gameOverShown) {
-            // اضبط العلم أولًا عشان نقلل احتمالية فتح نوافذ مكررة
             gameOverShown = true;
-            // اطلب من الـ EDT عرض النافذة المجمّعة
             SwingUtilities.invokeLater(this::showGameOverMenu);
         }
 
     }
 
-    /**
-     * Draw the red full-screen flash when hit.
-     */
     private void drawHitFlash(GL gl){
-        float alpha = (float)flashFrames / (float)FLASH_MAX * 0.9f; // max 0.9 alpha for stronger flash
+        float alpha = (float)flashFrames / (float)FLASH_MAX * 0.9f;
         if(alpha <= 0f) return;
         gl.glMatrixMode(GL.GL_PROJECTION);
         gl.glPushMatrix();
@@ -324,20 +272,13 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gl.glPopMatrix();
     }
 
-    /**
-     * Draw the in-game HUD (top-right). Uses GLUT bitmap string.
-     * Stops updating times when winShown == true (so time freezes as soon as win window appears).
-     * Also draws a larger health bar at the top-right which shrinks with HP.
-     * Uses PowerBar.png (last texture) as the fill texture; now configured to fill based on powerBarLeftToRight flag.
-     */
+
     private void drawHud(GL gl){
         long now = System.currentTimeMillis();
 
-        // set color white (used for text)
         gl.glColor3f(1f,1f,1f);
 
-        // We'll draw in normalized device coordinates (-1..1)
-        // Save projection & modelview
+
         gl.glMatrixMode(GL.GL_PROJECTION);
         gl.glPushMatrix();
         gl.glLoadIdentity();
@@ -346,19 +287,16 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gl.glPushMatrix();
         gl.glLoadIdentity();
 
-        // ----- Draw health bar (top-right) -----
-        // top-right positioning and larger size
-        float hbRight = 0.98f;               // near right edge
-        float hbTop = 0.92f;                 // near top edge
-        float hbWidth = 0.60f;               // wider
-        float hbHeight = 0.08f;              // taller
 
-        // compute left from right
+        float hbRight = 0.98f;
+        float hbTop = 0.92f;
+        float hbWidth = 0.60f;
+        float hbHeight = 0.08f;
+
         float hbLeft = hbRight - hbWidth;
 
         double healthRatio = Math.max(0, Math.min(1.0, (double)health / (double)healthMax));
 
-        // background (dark, semi-transparent)
         gl.glColor4f(0f, 0f, 0f, 0.6f);
         gl.glBegin(GL.GL_QUADS);
         gl.glVertex2f(hbLeft, hbTop);
@@ -367,10 +305,8 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gl.glVertex2f(hbLeft + hbWidth, hbTop);
         gl.glEnd();
 
-        // If PowerBar texture loaded, draw textured fill.
-        int powerBarTexIndex = textureIndex[textureIndex.length - 1]; // last one (PowerBar.png)
+        int powerBarTexIndex = textureIndex[textureIndex.length - 1];
         if(powerBarLeftToRight){
-            // Fill anchored at left and extending to the right proportionally to healthRatio
             if(healthRatio > 0.0){
                 float padding = 0.006f;
                 float fillLeft = hbLeft + padding;
@@ -380,13 +316,10 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
 
                 gl.glEnable(GL.GL_BLEND);
                 gl.glBindTexture(GL.GL_TEXTURE_2D, powerBarTexIndex);
-                gl.glColor3f(1f,1f,1f); // ensure texture color not tinted
+                gl.glColor3f(1f,1f,1f);
                 gl.glBegin(GL.GL_QUADS);
-                // left-top
                 gl.glTexCoord2f(0.0f, 1.0f); gl.glVertex2f(fillLeft, fillTop);
-                // left-bottom
                 gl.glTexCoord2f(0.0f, 0.0f); gl.glVertex2f(fillLeft, fillBottom);
-                // right-bottom (S coordinate equals healthRatio so texture is cropped on the right)
                 gl.glTexCoord2f((float)healthRatio, 0.0f); gl.glVertex2f(fillRight, fillBottom);
                 // right-top
                 gl.glTexCoord2f((float)healthRatio, 1.0f); gl.glVertex2f(fillRight, fillTop);
@@ -394,7 +327,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                 gl.glDisable(GL.GL_BLEND);
             }
         } else {
-            // Anchor at RIGHT and shrink leftwards (this is the requested reversed direction)
             if(healthRatio > 0.0){
                 float padding = 0.006f;
                 float fillRight = hbLeft + hbWidth - padding;
@@ -406,20 +338,15 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                 gl.glBindTexture(GL.GL_TEXTURE_2D, powerBarTexIndex);
                 gl.glColor3f(1f,1f,1f);
                 gl.glBegin(GL.GL_QUADS);
-                // left-top (texcoords scaled so the rightmost maps to S=1)
                 gl.glTexCoord2f((float)(1.0 - healthRatio), 1.0f); gl.glVertex2f(fillLeft, fillTop);
-                // left-bottom
                 gl.glTexCoord2f((float)(1.0 - healthRatio), 0.0f); gl.glVertex2f(fillLeft, fillBottom);
-                // right-bottom
                 gl.glTexCoord2f(1.0f, 0.0f); gl.glVertex2f(fillRight, fillBottom);
-                // right-top
                 gl.glTexCoord2f(1.0f, 1.0f); gl.glVertex2f(fillRight, fillTop);
                 gl.glEnd();
                 gl.glDisable(GL.GL_BLEND);
             }
         }
 
-        // border (white)
         gl.glColor3f(1f,1f,1f);
         gl.glBegin(GL.GL_LINE_LOOP);
         gl.glVertex2f(hbLeft, hbTop);
@@ -428,29 +355,25 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gl.glVertex2f(hbLeft + hbWidth, hbTop);
         gl.glEnd();
 
-        // health text inside bar (centered-ish)
         String hpText = "HP: " + health + " / " + healthMax;
         gl.glRasterPos2f(hbLeft + 0.02f, hbTop - hbHeight/2f - 0.01f);
         glut.glutBitmapString(GLUT.BITMAP_HELVETICA_12, hpText);
 
-        // Apply scale to make bitmap text larger for timers
         gl.glScalef(1.4f, 1.4f, 1f);
 
         if(level == 1){
             long elapsed;
             if(winShown){
-                // freeze at recorded level1Time
                 elapsed = level1Time;
             } else {
                 elapsed = (level1StartTime > 0) ? (now - level1StartTime) : 0L;
             }
             String text = "Level 1  " + formatTime(elapsed);
 
-            // draw single line near top-left (adjusted coords due to scale)
             gl.glRasterPos2f(-0.70f, 0.60f);
             glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, text);
         } else {
-            long lvl1 = level1Time; // recorded when entering level2
+            long lvl1 = level1Time;
             long lvl2Current;
             if(winShown){
                 lvl2Current = level2Time;
@@ -459,7 +382,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             }
             long total = lvl1 + lvl2Current;
 
-            // draw three lines with a bigger vertical gap
             gl.glRasterPos2f(-0.70f, 0.60f);
             glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Lvl1: " + formatTime(lvl1));
 
@@ -469,20 +391,17 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             gl.glRasterPos2f(-0.70f, 0.40f);
             glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Total: " + formatTime(total));
         }
-        // --- NEW: Draw "Tap ESC To Menu" bottom-right ---
         gl.glLoadIdentity();
-        gl.glColor3f(1f,1f,1f);  // white text
+        gl.glColor3f(1f,1f,1f);
 
         gl.glRasterPos2f(-0.90f, -0.90f);
         glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Tap ESC To Menu");
 
-        // restore matrices
         gl.glMatrixMode(GL.GL_PROJECTION);
         gl.glPopMatrix();
         gl.glMatrixMode(GL.GL_MODELVIEW);
         gl.glPopMatrix();
 
-        // reset color
         gl.glColor3f(1f,1f,1f);
     }
 
@@ -504,7 +423,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     }
 
     public void DrawMan(GL gl){
-        // If player dead, don't draw the man (disappear on death)
         if(health <= 0) return;
 
         gl.glPushMatrix();
@@ -540,7 +458,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             facingX = dx / len;
             facingY = dy / len;
 
-            // animation sequence 1->2->3->4->1...
             animCounter++;
             if(animCounter >= animDelay){
                 animCounter = 0;
@@ -592,7 +509,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                     bulletsX[bulletsCount] = worldMuzzleX_forBulletSpace;
                     bulletsY[bulletsCount] = worldMuzzleY_forBulletSpace;
 
-                    // increased bullet speed from 0.05 -> 0.08 for a noticeable but not extreme change
                     double speed = 0.08 * (manScale / 0.1);
                     bulletsSpeedX[bulletsCount] = speed * fx;
                     bulletsSpeedY[bulletsCount] = speed * fy;
@@ -609,7 +525,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             bulletsShot = 0;
         }
 
-        // update & draw bullets
         for(int i = 0; i < bulletsCount; i++){
             bulletsX[i] += bulletsSpeedX[i];
             bulletsY[i] += bulletsSpeedY[i];
@@ -638,7 +553,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             bulletsShot = 0;
         }
 
-        // Cleanup bullets that go far away
         int write = 0;
         double bound = 100.0;
         for(int i=0;i<bulletsCount;i++){
@@ -656,33 +570,26 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
     }
 
     public void updateAndDrawAliens(GL gl) {
-        // Update aliens with wandering behavior and bounce inside frame bounds:
-        // We will compute stored bounds depending on level:
+
         double storedMin, storedMax;
         if(level == 1){
-            // preserve previous behavior exactly (stored units)
             storedMin = -9.5;
             storedMax = 9.5;
         } else {
-            // level 2: world bounds must be -1..1 -> convert to stored units
             storedMin = -1.0 / alienRenderScale;
             storedMax =  1.0 / alienRenderScale;
         }
 
-        double invScale = 1.0 / alienRenderScale; // used to convert world-delta -> stored-delta
+        double invScale = 1.0 / alienRenderScale;
 
         for(int i = 0; i < alienCount; i++){
-            // small random turn (less jitter)
             alienAngle[i] += (Math.random() - 0.5) * 0.15;
-            // compute movement in world-space (so speeds behave consistently across levels)
             double worldDx = Math.cos(alienAngle[i]) * alienSpeed[i];
             double worldDy = Math.sin(alienAngle[i]) * alienSpeed[i];
 
-            // convert world-delta to stored-units and apply
             alienX[i] += worldDx * invScale;
             alienY[i] += worldDy * invScale;
 
-            // bounce on walls — reflect angle and clamp position so it doesn't go outside (walls = frame bounds)
             if(alienX[i] < storedMin){
                 alienX[i] = storedMin;
                 alienAngle[i] = Math.PI - alienAngle[i];
@@ -699,7 +606,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             }
         }
 
-        // draw aliens using current alienRenderScale
         for(int i = 0; i < alienCount; i++){
             gl.glPushMatrix();
             gl.glScaled(alienRenderScale, alienRenderScale, 1);
@@ -716,13 +622,11 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             gl.glPopMatrix();
         }
 
-        // collisions: bullets vs aliens, using screen-space positions derived from render scales
-        double collisionThreshold = Math.max(0.12, alienRenderScale * 1.2); // tuneable
+        double collisionThreshold = Math.max(0.12, alienRenderScale * 1.2);
 
         for(int ai = alienCount - 1; ai >= 0; ai--){
             boolean alienRemoved = false;
-            for(int bi = bulletsCount - 1; bi >= 0; bi--){ // iterate backwards so removals safe
-                // compute screen-space centers
+            for(int bi = bulletsCount - 1; bi >= 0; bi--){
                 double bulletScreenX = bulletRenderScale * bulletsX[bi];
                 double bulletScreenY = bulletRenderScale * bulletsY[bi];
                 double alienScreenX = alienRenderScale * alienX[ai];
@@ -731,7 +635,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                 double dx = bulletScreenX - alienScreenX;
                 double dy = bulletScreenY - alienScreenY;
                 if(Math.sqrt(dx*dx + dy*dy) < collisionThreshold){
-                    // remove alien ai by shifting later elements left
                     for(int k = ai; k < alienCount - 1; k++){
                         alienX[k] = alienX[k+1];
                         alienY[k] = alienY[k+1];
@@ -740,7 +643,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                     }
                     alienCount--;
 
-                    // remove only the bullet bi by shifting later bullets left
                     for(int k = bi; k < bulletsCount - 1; k++){
                         bulletsX[k] = bulletsX[k+1];
                         bulletsY[k] = bulletsY[k+1];
@@ -750,19 +652,17 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                     bulletsCount--;
 
                     alienRemoved = true;
-                    break; // break bullets loop for this alien (we removed it)
+                    break;
                 }
             }
             if(alienRemoved){
-                // alien removed; continue with next ai (already shifted)
             }
         }
 
-        // --- PLAYER <-> ALIEN COLLISIONS (damage) ---
-        // compute player screen position (because DrawMan uses glScaled(0.1) then glTranslated)
+
         double manScreenX = 0.1 * ManTranslateXValue;
         double manScreenY = 0.1 * ManTranslateYValue;
-        double playerCollisionRadius = 0.12; // tuneable
+        double playerCollisionRadius = 0.12;
 
         for(int i = alienCount - 1; i >= 0; i--){
             double alienScreenX = alienRenderScale * alienX[i];
@@ -772,19 +672,15 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             double dist = Math.sqrt(dx*dx + dy*dy);
 
             if(dist < playerCollisionRadius){
-                // hit detected
                 if(hitCooldownFrames == 0 && health > 0 && !gameOverShown){
-                    health -= 10; // each touch reduces 10 HP (tuneable)
+                    health -= 10;
                     if(health < 0) health = 0;
                     hitCooldownFrames = HIT_COOLDOWN_MAX;
 
-                    // trigger visual flash
                     flashFrames = FLASH_MAX;
 
-                    // trigger screen shake
                     shakeFrames = SHAKE_MAX;
 
-                    // optional: push alien away a bit to avoid immediate repeated collisions
                     double pushDirX = dx == 0 ? 0.01 : dx / dist * 0.02;
                     double pushDirY = dy == 0 ? 0.01 : dy / dist * 0.02;
                     alienX[i] += pushDirX / alienRenderScale;
@@ -846,7 +742,7 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         pauseWindow.setUndecorated(true);
         pauseWindow.setSize(420, 300);
         pauseWindow.setLocationRelativeTo(null);
-        pauseWindow.setBackground(new Color(0, 0, 0, 0)); // شفاف
+        pauseWindow.setBackground(new Color(0, 0, 0, 0));
 
         JPanel container = new JPanel() {
             @Override
@@ -855,7 +751,7 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                 Graphics2D g2 = (Graphics2D) g;
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                g2.setColor(new Color(30, 30, 30, 200)); // خلفية شفافة
+                g2.setColor(new Color(30, 30, 30, 200));
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 25, 25);
             }
         };
@@ -876,7 +772,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gbc.gridwidth = 2;
         container.add(title, gbc);
 
-        // Label + Slider
         gbc.gridy = 1;
         gbc.gridwidth = 1;
 
@@ -888,18 +783,14 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         volumeSlider.setOpaque(false);
         volumeSlider.setBackground(new Color(0, 0, 0, 0));
 
-        // set initial slider value from global sound manager (in case app used slider elsewhere)
         volumeSlider.setValue(Math.round(Sound.SoundManager.getGlobalVolume() * 100f));
 
         volumeSlider.addChangeListener(e -> {
             float v = volumeSlider.getValue() / 100f;
-            // حدّث المتغيّر المحلي (لو تستخدمه داخل كلاس الـ listener)
             volume = v;
 
-            // أطّلع في الكونسول (اختياري للتجربة)
             System.out.println("Current Volume = " + v);
 
-            // فعّل الصوت فعلاً عن طريق SoundManager (يجب أن تكون الدالة موجودة في كلاسك)
             try {
                 Sound.SoundManager.setGlobalVolume(v);
             } catch (Throwable ex) {
@@ -907,20 +798,13 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                 System.err.println("setGlobalVolume failed: " + ex.getMessage());
             }
 
-            // اختياري: شغّل صوت feedback بسيط عند الإفلات من السحب
-            if (!volumeSlider.getValueIsAdjusting()) {
-                try {
-                    // ضع ملف صغير click.wav داخل Assets اذا حابب
-                    //Sound.SoundManager.playOnce("Assets/click.wav");
-                } catch (Throwable ignore) { }
-            }
+
         });
 
 
         gbc.gridx = 1;
         container.add(volumeSlider, gbc);
 
-        // Resume Button
         gbc.gridy = 2;
         gbc.gridx = 0;
         gbc.gridwidth = 2;
@@ -934,7 +818,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         });
         container.add(resumeBtn, gbc);
 
-        // Back to menu
         gbc.gridy = 3;
         JButton menuBtn = new JButton("Back to Menu");
         styleButton(menuBtn);
@@ -954,10 +837,10 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         btn.setFocusPainted(false);
         btn.setFont(new Font("Arial", Font.BOLD, 18));
 
-        Color base = new Color(0xC2A878);   // صحراوي
-        Color hover = new Color(0xD9C7A6);  // افتح صحراوي
-        Color border = new Color(0x7A6240); // بني غامق
-        Color text = new Color(0x3B2F1B);   // بني داكن
+        Color base = new Color(0xC2A878);
+        Color hover = new Color(0xD9C7A6);
+        Color border = new Color(0x7A6240);
+        Color text = new Color(0x3B2F1B);
 
         btn.setBackground(base);
         btn.setForeground(text);
@@ -972,7 +855,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             }
         });
     }
-    // تستدعى من الـ EDT (SwingUtilities.invokeLater)
     private void showGameOverMenu() {
         // إذا المينيو مفتوح متفتحش تاني
         if (pauseWindow != null) return;
@@ -985,7 +867,7 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         pauseWindow.setUndecorated(true);
         pauseWindow.setSize(420, 260);
         pauseWindow.setLocationRelativeTo(null);
-        pauseWindow.setBackground(new Color(0,0,0,0)); // شفاف
+        pauseWindow.setBackground(new Color(0,0,0,0));
 
         JPanel container = new JPanel() {
             @Override
@@ -993,7 +875,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                 super.paintComponent(g);
                 Graphics2D g2 = (Graphics2D) g;
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                // نفس خلفية الـ Pause (غامق وشفاف) مع زوايا مدورة
                 g2.setColor(new Color(30, 30, 30, 200));
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 25, 25);
             }
@@ -1007,7 +888,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gbc.insets = new Insets(10, 10, 10, 10);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // Title
         JLabel title = new JLabel("Game Over", JLabel.CENTER);
         title.setFont(new Font("Arial", Font.BOLD, 26));
         title.setForeground(Color.WHITE);
@@ -1016,32 +896,27 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gbc.gridwidth = 2;
         container.add(title, gbc);
 
-        // message (optional)
         gbc.gridy = 1;
         JLabel msg = new JLabel("<html><center>You died. Try again!</center></html>", JLabel.CENTER);
         msg.setFont(new Font("Arial", Font.PLAIN, 14));
         msg.setForeground(Color.LIGHT_GRAY);
         container.add(msg, gbc);
 
-        // Restart button
         gbc.gridy = 2;
         gbc.gridwidth = 2;
         JButton restartBtn = new JButton("Restart");
         restartBtn.setFocusable(false);
         restartBtn.setRequestFocusEnabled(false);
-        styleButton(restartBtn); // نستخدم نفس دالة الستايل اللي عندك
+        styleButton(restartBtn);
         restartBtn.addActionListener(e -> {
-            // اغلق النافذة واعمل reset للعبة
             pauseWindow.dispose();
             pauseWindow = null;
-            // resetGame() مضبوط synchronized في كودك
             resetGame();
             paused = false;
             gameOverShown = false;
         });
         container.add(restartBtn, gbc);
 
-        // Back to menu
         gbc.gridy = 3;
         JButton backBtn = new JButton("Back to Menu");
         backBtn.setFocusable(false);
@@ -1052,7 +927,7 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             pauseWindow = null;
             paused = false;
             if (gamePanel != null) {
-                gamePanel.returnToMenu(); // صح — GamePanel يتعامل مع الـ parent داخلياً
+                gamePanel.returnToMenu();
             }
         });
 
@@ -1067,7 +942,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         winShown = true;
         paused = true;
 
-        // حساب الوقت لو مش متسجل
         if (level == 1) {
             if (level1Time == 0L)
                 level1Time = System.currentTimeMillis() - level1StartTime;
@@ -1080,7 +954,7 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         pauseWindow.setUndecorated(true);
         pauseWindow.setSize(420, 320);
         pauseWindow.setLocationRelativeTo(null);
-        pauseWindow.setBackground(new Color(0,0,0,0)); // شفاف
+        pauseWindow.setBackground(new Color(0,0,0,0));
 
         JPanel container = new JPanel() {
             @Override
@@ -1101,7 +975,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gbc.insets = new Insets(8, 12, 8, 12);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // ---------------------- Title ----------------------
         JLabel title = new JLabel("You Win!", JLabel.CENTER);
         title.setFont(new Font("Arial", Font.BOLD, 26));
         title.setForeground(Color.WHITE);
@@ -1110,7 +983,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gbc.gridwidth = 2;
         container.add(title, gbc);
 
-        // ---------------------- Time Text ----------------------
         gbc.gridy = 1;
         String timesHtml;
 
@@ -1131,11 +1003,7 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         timesLabel.setForeground(Color.LIGHT_GRAY);
         container.add(timesLabel, gbc);
 
-        // ------------------------------------------------------------
-        //             BUTTONS (Up, Restart, Back)
-        // ------------------------------------------------------------
 
-        // ========== 1) Up To Next Level (فوق) ==========
         gbc.gridy = 2;
         gbc.gridwidth = 2;
 
@@ -1150,7 +1018,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
                 pauseWindow.dispose();
                 pauseWindow = null;
 
-                // حفظ وقت level 1 لو مش متسجل
                 if (level1Time == 0L)
                     level1Time = System.currentTimeMillis() - level1StartTime;
 
@@ -1173,7 +1040,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         container.add(nextBtn, gbc);
 
 
-        // ========== 2) Restart (في النص) ==========
         gbc.gridy = 3;
 
         JButton restartBtn = new JButton("Restart");
@@ -1200,7 +1066,6 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         container.add(restartBtn, gbc);
 
 
-        // ========== 3) Back to Menu (تحت) ==========
         gbc.gridy = 4;
 
         JButton backBtn = new JButton("Back to Menu");

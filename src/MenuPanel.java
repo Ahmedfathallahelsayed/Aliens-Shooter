@@ -11,12 +11,10 @@ class MenuPanel extends JPanel {
     private Image imgStart, imgHow, imgExit;
     private JButton startBtn, howBtn, exitBtn;
 
-    // زر الصوت (أيقونة) وبانل السلايدر
     private JButton soundBtn;
     private JPanel soundPanel;
     private JSlider volumeSlider;
 
-    // نسب الأزرار كما كان عندك
     private double btnWidthRatio = 0.42;
     private double btnHeightRatio = 0.095;
     private double startYRatio = 0.35;
@@ -24,7 +22,6 @@ class MenuPanel extends JPanel {
     private double exitYRatio = 0.655;
 
     public MenuPanel(Window window) {
-        // load images (تأكد أن الملفات موجودة في المسار المطابق)
         background = new ImageIcon("Assets/menu_bg.png").getImage();
         imgStart = new ImageIcon("Assets/button_1.png").getImage();
         imgHow = new ImageIcon("Assets/button_2.png").getImage();
@@ -33,7 +30,6 @@ class MenuPanel extends JPanel {
         setLayout(null);
         setOpaque(true);
 
-        // ---- MAIN MENU BUTTONS ----
         startBtn = makeImageButton();
         howBtn = makeImageButton();
         exitBtn = makeImageButton();
@@ -46,11 +42,9 @@ class MenuPanel extends JPanel {
         howBtn.addActionListener(e -> window.showHowToPlay());
         exitBtn.addActionListener(e -> System.exit(0));
 
-        // ----- SOUND ICON BUTTON (PNG transparent) -----
         soundBtn = createSpeakerButton("Assets/speaker.png", 44); // path + ideal size (px)
         add(soundBtn);
 
-        // ---- SOUND PANEL (hidden by default) ----
         soundPanel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -102,7 +96,6 @@ class MenuPanel extends JPanel {
 
         add(soundPanel);
 
-        // toggle sound panel on click
         soundBtn.addActionListener(e -> {
             boolean show = !soundPanel.isVisible();
             if (show) {
@@ -115,7 +108,6 @@ class MenuPanel extends JPanel {
             SwingUtilities.invokeLater(this::requestFocusInWindow);
         });
 
-        // click outside to close panel
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
@@ -128,7 +120,6 @@ class MenuPanel extends JPanel {
             }
         });
 
-        // re-layout on resize
         addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
@@ -143,7 +134,6 @@ class MenuPanel extends JPanel {
         soundPanel.setVisible(false);
     }
 
-    // create image-button for speaker with hover-scale
     private JButton createSpeakerButton(String imagePath, int baseSizePx) {
         ImageIcon baseIcon = null;
         try {
@@ -151,7 +141,6 @@ class MenuPanel extends JPanel {
             Image scaled = img.getScaledInstance(baseSizePx, baseSizePx, Image.SCALE_SMOOTH);
             baseIcon = new ImageIcon(scaled);
         } catch (Exception ex) {
-            // fallback: use text icon
         }
 
         JButton b = new JButton();
@@ -163,7 +152,6 @@ class MenuPanel extends JPanel {
 
         if (baseIcon != null) {
             b.setIcon(baseIcon);
-            // hover -> slightly larger icon
             final ImageIcon hoverIcon = new ImageIcon(((ImageIcon) baseIcon).getImage().getScaledInstance((int) (baseSizePx * 1.18), (int) (baseSizePx * 1.18), Image.SCALE_SMOOTH));
             ImageIcon finalBaseIcon = baseIcon;
             b.addMouseListener(new MouseAdapter() {
@@ -181,7 +169,6 @@ class MenuPanel extends JPanel {
                 public void mousePressed(MouseEvent e) { /* keep icon */ }
             });
         } else {
-            // fallback textual speaker
             b.setText("\uD83D\uDD0A");
             b.setFont(new Font("Arial", Font.BOLD, 28));
             b.setForeground(new Color(0x0A1A3A));
@@ -268,7 +255,6 @@ class MenuPanel extends JPanel {
         if (background != null) g.drawImage(background, 0, 0, getWidth(), getHeight(), this);
     }
 
-    // optional desert button style (not used for speaker)
     private void styleDesertButton(AbstractButton btn) {
         Color desertBase = new Color(0xC2A878);
         Color desertHover = new Color(0xD9C7A6);
