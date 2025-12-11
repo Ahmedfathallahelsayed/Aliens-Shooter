@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="lib64">
+    <CLASSES>
+      <root url="file://D:/Downloads/JOGLwin/JOGLwin/lib64" />
+    </CLASSES>
+    <JAVADOC />
+    <NATIVE>
+      <root url="file://D:/Downloads/JOGLwin/JOGLwin/lib64" />
+    </NATIVE>
+    <SOURCES />
+    <jarDirectory url="file://D:/Downloads/JOGLwin/JOGLwin/lib64" recursive="false" />
+  </library>
+</component>

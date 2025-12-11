@@ -6,37 +6,104 @@ import javax.media.opengl.glu.GLU;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.io.IOException;
-import java.util.ArrayList;
+import javax.swing.JButton;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+import java.awt.BorderLayout;
+import java.awt.FlowLayout;
+import com.sun.opengl.util.GLUT;
 
 public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
 
     String assetsFolderName = "Assets";
-    String[] textureNames = new String[]{"background.png","Man1.png","Man2.png","Man3.png","Man4.png","ARMM.png","pacman2.png"};
+    // PowerBar.png should be present in Assets
+    String[] textureNames = new String[]{"background.png","Man1.png","Man2.png","Man3.png","Man4.png","ARMM.png","pacman2.png","PowerBar.png"};
     TextureReader.Texture[] texture = new TextureReader.Texture[textureNames.length];
     int[] textureIndex = new int[textureNames.length];
 
     double ManTranslateXValue = 0;
     double ManTranslateYValue = 0;
     int rotateAngleValue = 0;
-    int control = 1;
+    int control = 1; // man sprite index 1..4
 
-    ArrayList<Double> bulletsX = new ArrayList<>();
-    ArrayList<Double> bulletsY = new ArrayList<>();
-    ArrayList<Double> bulletsSpeedX = new ArrayList<>();
-    ArrayList<Double> bulletsSpeedY = new ArrayList<>();
+    double facingX = 0;
+    double facingY = 1;
+
+    // animation variables for the man sprites (circular)
+    int animCounter = 0;
+    int animDelay = 8; // frames between sprite changes (tuneable)
+
+    // Bullets arrays
+    final int MAX_BULLETS = 500;
+    double[] bulletsX = new double[MAX_BULLETS];
+    double[] bulletsY = new double[MAX_BULLETS];
+    double[] bulletsSpeedX = new double[MAX_BULLETS];
+    double[] bulletsSpeedY = new double[MAX_BULLETS];
+    int bulletsCount = 0;
     boolean fire = false;
-    // Aliens
-    ArrayList<Double> alienX = new ArrayList<>();
-    ArrayList<Double> alienY = new ArrayList<>();
-    ArrayList<Double> alienSpeed = new ArrayList<>();
 
+    // shot spacing (holding SPACE)
+    int fireDelayFrames = 45;
+    int shotCooldown = 0;
+
+    // Aliens arrays
+    final int MAX_ALIENS = 200;
+    double[] alienX = new double[MAX_ALIENS];
+    double[] alienY = new double[MAX_ALIENS];
+    double[] alienSpeed = new double[MAX_ALIENS];
+    double[] alienAngle = new double[MAX_ALIENS];
+    int alienCount = 0;
+
+    // render scales (adjust per level)
+    double alienRenderScale = 0.1; // level 1 default (used in glScaled and collision)
+    final double bulletRenderScale = 0.03;
+
+    // game level: 1 or 2 only
+    int level = 1;
+
+    // flag to ensure win window shown only once
+    boolean winShown = false;
+
+    // game over flag
+    boolean gameOverShown = false;
 
     boolean up=false, down=false, left=false, right=false;
-    double moveSpeed = 0.04;
+    double moveSpeed = 0.01;
 
     int bulletsToShoot = 15;
     int bulletsShot = 0;
     int fireCounter = 0;
+
+    // ---- Time tracking (ms) ----
+    long level1StartTime = 0L;
+    long level2StartTime = 0L;
+    long level1Time = 0L; // duration in ms (recorded when leaving level1)
+    long level2Time = 0L; // duration in ms (recorded when finishing level2)
+
+    // GLUT for drawing bitmap text
+    private GLUT glut = new GLUT();
+
+    // ----- Health system -----
+    int healthMax = 100;
+    int health = healthMax;
+    int hitCooldownFrames = 0;        // frames of invulnerability after a hit
+    final int HIT_COOLDOWN_MAX = 60;  // ~1 second at 60fps
+
+    // PowerBar fill direction:
+    // false => RIGHT-to-LEFT fill (i.e. anchored at right, shrinks leftwards)
+    boolean powerBarLeftToRight = false;
+
+    // ----- Hit visual effect (flash) -----
+    int flashFrames = 0;
+    final int FLASH_MAX = 18; // frames of red flash
+
+    // ----- Screen shake -----
+    int shakeFrames = 0;
+    final int SHAKE_MAX = 16;       // frames of shake when hit (tuneable)
+    final double SHAKE_MAG = 0.035; // maximum shake magnitude in NDC coordinates (tuneable)
+
     @Override
     public void init(GLAutoDrawable drawable) {
         GL gl = drawable.getGL();
@@ -57,36 +124,471 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             }
         }
 
-        int alienCount = 20;
+        // initialize level 1 by default (also starts level1 timer)
+        resetGame();
+    }
+
+    /**
+     * إعادة تهيئة اللعبة للمستوى 1 (restart).
+     * synchronized عشان نقلل مشاكل التزامن بين Swing EDT و GL thread.
+     */
+    public synchronized void resetGame(){
+        // reset to level 1 default
+        level = 1;
+        alienRenderScale = 0.1; // size normal for level 1
+
+        // reset player
+        ManTranslateXValue = 0;
+        ManTranslateYValue = 0;
+        rotateAngleValue = 0;
+        control = 1;
+        facingX = 0; facingY = 1;
+        up = down = left = right = false;
+        animCounter = 0;
+
+        // reset bullets
+        bulletsCount = 0;
+        bulletsShot = 0;
+        shotCooldown = 0;
+        fire = false;
+
+        // reset aliens for level 1
+        alienCount = 20;
+        initAliens(alienCount, 0.0012, 0.0006);
+
+        // reset times: start level1 timer now
+        level1StartTime = System.currentTimeMillis();
+        level1Time = 0L;
+        level2StartTime = 0L;
+        level2Time = 0L;
+
+        // reset health (ensure Level1 defaults)
+        healthMax = 100;
+        health = healthMax;
+        hitCooldownFrames = 0;
+        gameOverShown = false;
+
+        // reset effects
+        flashFrames = 0;
+        shakeFrames = 0;
+
+        // reset win flag so dialog can show again next time
+        winShown = false;
+    }
+
+    /**
+     * انتقل للمستوى التالي (level 2). يقلّل حجم الفضائي للنص، يزيد العدد ويزيد السرعة.
+     */
+    public synchronized void goToNextLevel(){
+        if(level != 1) return; // فقط من level1 الى level2
+        // record level1 elapsed time up to this moment
+        level1Time = System.currentTimeMillis() - level1StartTime;
+
+        level = 2;
+        alienRenderScale = 0.05; // نص الحجم
+        alienCount = 60; // عدد أكبر
+        // أسرع: نزوّد السرعات الأساسية
+        initAliens(alienCount, 0.0025, 0.0015); // base + random range
+        // reset bullets and shot state but keep player pos
+        bulletsCount = 0;
+        bulletsShot = 0;
+        shotCooldown = 0;
+        fire = false;
+
+        // start level2 timer now
+        level2StartTime = System.currentTimeMillis();
+        level2Time = 0L;
+
+        winShown = false;
+
+        // *** Set Level2 health to 300/300 as requested previously ***
+        healthMax = 300;
+        health = healthMax;
+
+        // reset effects
+        flashFrames = 0;
+        shakeFrames = 0;
+    }
+
+    // helper to initialize aliens with given base speed and random range
+    private void initAliens(int count, double baseSpeed, double randRange){
         int zones = 5;
         double zoneWidth = 2.0 / zones;
-
-        for(int i = 0; i < alienCount; i++){
+        for(int i = 0; i < count && i < MAX_ALIENS; i++){
             int zoneIndex = i % zones;
             double minX = -1 + zoneIndex * zoneWidth;
             double maxX = minX + zoneWidth;
-            double x = minX + Math.random() * (maxX - minX);
+            double worldX = minX + Math.random() * (maxX - minX); // this is in world coords (-1..1)
+            double worldY = Math.random() < 0.5 ? 1.2 + Math.random() * 0.2 : -1.2 - Math.random() * 0.2;
 
-            double y = Math.random() < 0.5 ? 1.2 + Math.random() * 0.2 : -1.2 - Math.random() * 0.2;
+            // STORE positions in stored-units so that drawing does: world = alienRenderScale * stored
+            // stored = world / alienRenderScale
+            alienX[i] = worldX / alienRenderScale;
+            alienY[i] = worldY / alienRenderScale;
 
-            alienX.add(x);
-            alienY.add(y);
-            alienSpeed.add(0.005 + Math.random() * 0.01);
+            alienSpeed[i] = baseSpeed + Math.random() * randRange;
+            alienAngle[i] = Math.random() * Math.PI * 2;
         }
     }
-
 
     @Override
     public void display(GLAutoDrawable drawable) {
         GL gl = drawable.getGL();
         gl.glClear(GL.GL_COLOR_BUFFER_BIT);
 
+        // countdown shot cooldown each frame
+        if(shotCooldown > 0) shotCooldown--;
+
+        // cooldown for hit invulnerability
+        if(hitCooldownFrames > 0) hitCooldownFrames--;
+
         updateManPositionAndAngle();
+
+        // --- Apply screen shake to the world-rendering (background, man, bullets, aliens)
+        gl.glPushMatrix();
+        if(shakeFrames > 0){
+            double intensity = (double)shakeFrames / (double)SHAKE_MAX; // decays
+            double sx = (Math.random() * 2.0 - 1.0) * SHAKE_MAG * intensity;
+            double sy = (Math.random() * 2.0 - 1.0) * SHAKE_MAG * intensity;
+            gl.glTranslated((float)sx, (float)sy, 0f);
+            shakeFrames--;
+        }
+
         DrawBackground(gl);
         DrawMan(gl);
         handleBullets(gl);
         updateAndDrawAliens(gl);
 
+        gl.glPopMatrix(); // stop shaking; HUD & flash drawn without shake
+
+        // draw hit flash overlay (if any) ON TOP of game objects (so player sees the hit)
+        if(flashFrames > 0){
+            drawHitFlash(gl);
+            flashFrames--;
+        }
+
+        // draw HUD (inside the GL frame) top-right, white, using GLUT
+        drawHud(gl);
+
+        // check win condition AFTER aliens updated/removed
+        if(alienCount == 0 && !winShown && !gameOverShown){
+            winShown = true;
+
+            // compute times properly depending on which level finished
+            if(level == 1){
+                // finish level1
+                level1Time = System.currentTimeMillis() - level1StartTime;
+                // show window for level1 with its time and Restart/Next buttons (undecorated so X/minimize disabled)
+                SwingUtilities.invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        final JFrame frame = new JFrame("You Win!");
+                        // remove title bar so X/minimize are effectively disabled
+                        frame.setUndecorated(true);
+                        frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+                        frame.setSize(360, 220);
+                        frame.setLocationRelativeTo(null);
+                        frame.setResizable(false);
+
+                        String t1 = formatTime(level1Time);
+                        JLabel label = new JLabel("<html><center>You Win!<br/>Level 1 Time: " + t1 + "</center></html>", JLabel.CENTER);
+                        label.setFont(label.getFont().deriveFont(18f));
+
+                        JButton restartBtn = new JButton("Restart");
+                        restartBtn.setFocusable(false);
+                        restartBtn.addActionListener(e -> {
+                            frame.dispose();
+                            resetGame();
+                        });
+
+                        JButton nextLevelBtn = new JButton("Up To Next Level");
+                        nextLevelBtn.setFocusable(false);
+                        nextLevelBtn.setEnabled(true);
+                        nextLevelBtn.addActionListener(e -> {
+                            frame.dispose();
+                            goToNextLevel();
+                        });
+
+                        JPanel buttonPanel = new JPanel(new FlowLayout());
+                        buttonPanel.add(restartBtn);
+                        buttonPanel.add(nextLevelBtn);
+
+                        JPanel panel = new JPanel(new BorderLayout());
+                        panel.add(label, BorderLayout.CENTER);
+                        panel.add(buttonPanel, BorderLayout.SOUTH);
+                        frame.getContentPane().add(panel);
+                        frame.setVisible(true);
+                    }
+                });
+            } else { // level == 2
+                // finish level2
+                level2Time = System.currentTimeMillis() - level2StartTime;
+                long total = level1Time + level2Time;
+                final String t1 = formatTime(level1Time);
+                final String t2 = formatTime(level2Time);
+                final String tTotal = formatTime(total);
+
+                SwingUtilities.invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        final JFrame frame = new JFrame("You Win!");
+                        frame.setUndecorated(true);
+                        frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+                        frame.setSize(360, 220);
+                        frame.setLocationRelativeTo(null);
+                        frame.setResizable(false);
+
+                        JLabel label = new JLabel(
+                                "<html><center>You Win!<br/>Level 1 Time: " + t1 +
+                                        "<br/>Level 2 Time: " + t2 +
+                                        "<br/>Total Time: " + tTotal + "</center></html>",
+                                JLabel.CENTER);
+                        label.setFont(label.getFont().deriveFont(16f));
+
+                        JButton restartBtn = new JButton("Restart");
+                        restartBtn.setFocusable(false);
+                        restartBtn.addActionListener(e -> {
+                            frame.dispose();
+                            resetGame();
+                        });
+
+                        // Next level button disabled in level2 end (only 2 levels)
+                        JButton nextLevelBtn = new JButton("Up To Next Level");
+                        nextLevelBtn.setFocusable(false);
+                        nextLevelBtn.setEnabled(false);
+
+                        JPanel buttonPanel = new JPanel(new FlowLayout());
+                        buttonPanel.add(restartBtn);
+                        buttonPanel.add(nextLevelBtn);
+
+                        JPanel panel = new JPanel(new BorderLayout());
+                        panel.add(label, BorderLayout.CENTER);
+                        panel.add(buttonPanel, BorderLayout.SOUTH);
+                        frame.getContentPane().add(panel);
+                        frame.setVisible(true);
+                    }
+                });
+            }
+        }
+
+        // Game over check
+        if(health <= 0 && !gameOverShown){
+            gameOverShown = true;
+            final long l1 = level1Time;
+            final long l2 = level2Time;
+            SwingUtilities.invokeLater(() -> {
+                final JFrame frame = new JFrame("Game Over");
+                frame.setUndecorated(true);
+                frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+                frame.setSize(360, 180);
+                frame.setLocationRelativeTo(null);
+                frame.setResizable(false);
+
+                JLabel label = new JLabel("<html><center>Game Over<br/>You died.</center></html>", JLabel.CENTER);
+                label.setFont(label.getFont().deriveFont(18f));
+
+                JButton restartBtn = new JButton("Restart");
+                restartBtn.setFocusable(false);
+                restartBtn.addActionListener(e -> {
+                    frame.dispose();
+                    resetGame();
+                });
+
+                JPanel buttonPanel = new JPanel(new FlowLayout());
+                buttonPanel.add(restartBtn);
+
+                JPanel panel = new JPanel(new BorderLayout());
+                panel.add(label, BorderLayout.CENTER);
+                panel.add(buttonPanel, BorderLayout.SOUTH);
+                frame.getContentPane().add(panel);
+                frame.setVisible(true);
+            });
+        }
+    }
+
+    /**
+     * Draw the red full-screen flash when hit.
+     */
+    private void drawHitFlash(GL gl){
+        float alpha = (float)flashFrames / (float)FLASH_MAX * 0.9f; // max 0.9 alpha for stronger flash
+        if(alpha <= 0f) return;
+        gl.glMatrixMode(GL.GL_PROJECTION);
+        gl.glPushMatrix();
+        gl.glLoadIdentity();
+        gl.glMatrixMode(GL.GL_MODELVIEW);
+        gl.glPushMatrix();
+        gl.glLoadIdentity();
+
+        gl.glEnable(GL.GL_BLEND);
+        gl.glColor4f(1f, 0f, 0f, alpha);
+        gl.glBegin(GL.GL_QUADS);
+        gl.glVertex2f(-1f, -1f);
+        gl.glVertex2f(-1f, 1f);
+        gl.glVertex2f(1f, 1f);
+        gl.glVertex2f(1f, -1f);
+        gl.glEnd();
+        gl.glDisable(GL.GL_BLEND);
+
+        gl.glMatrixMode(GL.GL_PROJECTION);
+        gl.glPopMatrix();
+        gl.glMatrixMode(GL.GL_MODELVIEW);
+        gl.glPopMatrix();
+    }
+
+    /**
+     * Draw the in-game HUD (top-right). Uses GLUT bitmap string.
+     * Stops updating times when winShown == true (so time freezes as soon as win window appears).
+     * Also draws a larger health bar at the top-right which shrinks with HP.
+     * Uses PowerBar.png (last texture) as the fill texture; now configured to fill based on powerBarLeftToRight flag.
+     */
+    private void drawHud(GL gl){
+        long now = System.currentTimeMillis();
+
+        // set color white (used for text)
+        gl.glColor3f(1f,1f,1f);
+
+        // We'll draw in normalized device coordinates (-1..1)
+        // Save projection & modelview
+        gl.glMatrixMode(GL.GL_PROJECTION);
+        gl.glPushMatrix();
+        gl.glLoadIdentity();
+
+        gl.glMatrixMode(GL.GL_MODELVIEW);
+        gl.glPushMatrix();
+        gl.glLoadIdentity();
+
+        // ----- Draw health bar (top-right) -----
+        // top-right positioning and larger size
+        float hbRight = 0.98f;               // near right edge
+        float hbTop = 0.92f;                 // near top edge
+        float hbWidth = 0.60f;               // wider
+        float hbHeight = 0.08f;              // taller
+
+        // compute left from right
+        float hbLeft = hbRight - hbWidth;
+
+        double healthRatio = Math.max(0, Math.min(1.0, (double)health / (double)healthMax));
+
+        // background (dark, semi-transparent)
+        gl.glColor4f(0f, 0f, 0f, 0.6f);
+        gl.glBegin(GL.GL_QUADS);
+        gl.glVertex2f(hbLeft, hbTop);
+        gl.glVertex2f(hbLeft, hbTop - hbHeight);
+        gl.glVertex2f(hbLeft + hbWidth, hbTop - hbHeight);
+        gl.glVertex2f(hbLeft + hbWidth, hbTop);
+        gl.glEnd();
+
+        // If PowerBar texture loaded, draw textured fill.
+        int powerBarTexIndex = textureIndex[textureIndex.length - 1]; // last one (PowerBar.png)
+        if(powerBarLeftToRight){
+            // Fill anchored at left and extending to the right proportionally to healthRatio
+            if(healthRatio > 0.0){
+                float padding = 0.006f;
+                float fillLeft = hbLeft + padding;
+                float fillRight = (float)(hbLeft + padding + (hbWidth - 2*padding) * healthRatio);
+                float fillTop = hbTop - 0.006f;
+                float fillBottom = hbTop - hbHeight + 0.006f;
+
+                gl.glEnable(GL.GL_BLEND);
+                gl.glBindTexture(GL.GL_TEXTURE_2D, powerBarTexIndex);
+                gl.glColor3f(1f,1f,1f); // ensure texture color not tinted
+                gl.glBegin(GL.GL_QUADS);
+                // left-top
+                gl.glTexCoord2f(0.0f, 1.0f); gl.glVertex2f(fillLeft, fillTop);
+                // left-bottom
+                gl.glTexCoord2f(0.0f, 0.0f); gl.glVertex2f(fillLeft, fillBottom);
+                // right-bottom (S coordinate equals healthRatio so texture is cropped on the right)
+                gl.glTexCoord2f((float)healthRatio, 0.0f); gl.glVertex2f(fillRight, fillBottom);
+                // right-top
+                gl.glTexCoord2f((float)healthRatio, 1.0f); gl.glVertex2f(fillRight, fillTop);
+                gl.glEnd();
+                gl.glDisable(GL.GL_BLEND);
+            }
+        } else {
+            // Anchor at RIGHT and shrink leftwards (this is the requested reversed direction)
+            if(healthRatio > 0.0){
+                float padding = 0.006f;
+                float fillRight = hbLeft + hbWidth - padding;
+                float fillLeft = (float)(hbLeft + hbWidth - padding - (hbWidth - 2*padding) * healthRatio);
+                float fillTop = hbTop - 0.006f;
+                float fillBottom = hbTop - hbHeight + 0.006f;
+
+                gl.glEnable(GL.GL_BLEND);
+                gl.glBindTexture(GL.GL_TEXTURE_2D, powerBarTexIndex);
+                gl.glColor3f(1f,1f,1f);
+                gl.glBegin(GL.GL_QUADS);
+                // left-top (texcoords scaled so the rightmost maps to S=1)
+                gl.glTexCoord2f((float)(1.0 - healthRatio), 1.0f); gl.glVertex2f(fillLeft, fillTop);
+                // left-bottom
+                gl.glTexCoord2f((float)(1.0 - healthRatio), 0.0f); gl.glVertex2f(fillLeft, fillBottom);
+                // right-bottom
+                gl.glTexCoord2f(1.0f, 0.0f); gl.glVertex2f(fillRight, fillBottom);
+                // right-top
+                gl.glTexCoord2f(1.0f, 1.0f); gl.glVertex2f(fillRight, fillTop);
+                gl.glEnd();
+                gl.glDisable(GL.GL_BLEND);
+            }
+        }
+
+        // border (white)
+        gl.glColor3f(1f,1f,1f);
+        gl.glBegin(GL.GL_LINE_LOOP);
+        gl.glVertex2f(hbLeft, hbTop);
+        gl.glVertex2f(hbLeft, hbTop - hbHeight);
+        gl.glVertex2f(hbLeft + hbWidth, hbTop - hbHeight);
+        gl.glVertex2f(hbLeft + hbWidth, hbTop);
+        gl.glEnd();
+
+        // health text inside bar (centered-ish)
+        String hpText = "HP: " + health + " / " + healthMax;
+        gl.glRasterPos2f(hbLeft + 0.02f, hbTop - hbHeight/2f - 0.01f);
+        glut.glutBitmapString(GLUT.BITMAP_HELVETICA_12, hpText);
+
+        // Apply scale to make bitmap text larger for timers
+        gl.glScalef(1.4f, 1.4f, 1f);
+
+        if(level == 1){
+            long elapsed;
+            if(winShown){
+                // freeze at recorded level1Time
+                elapsed = level1Time;
+            } else {
+                elapsed = (level1StartTime > 0) ? (now - level1StartTime) : 0L;
+            }
+            String text = "Level 1  " + formatTime(elapsed);
+
+            // draw single line near top-left (adjusted coords due to scale)
+            gl.glRasterPos2f(-0.70f, 0.60f);
+            glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, text);
+        } else {
+            long lvl1 = level1Time; // recorded when entering level2
+            long lvl2Current;
+            if(winShown){
+                lvl2Current = level2Time;
+            } else {
+                lvl2Current = (level2StartTime > 0) ? (now - level2StartTime) : 0L;
+            }
+            long total = lvl1 + lvl2Current;
+
+            // draw three lines with a bigger vertical gap
+            gl.glRasterPos2f(-0.70f, 0.60f);
+            glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Lvl1: " + formatTime(lvl1));
+
+            gl.glRasterPos2f(-0.70f, 0.50f);
+            glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Lvl2: " + formatTime(lvl2Current));
+
+            gl.glRasterPos2f(-0.70f, 0.40f);
+            glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "Total: " + formatTime(total));
+        }
+
+        // restore matrices
+        gl.glMatrixMode(GL.GL_PROJECTION);
+        gl.glPopMatrix();
+        gl.glMatrixMode(GL.GL_MODELVIEW);
+        gl.glPopMatrix();
+
+        // reset color
+        gl.glColor3f(1f,1f,1f);
     }
 
     @Override
@@ -98,15 +600,18 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
         gl.glEnable(GL.GL_BLEND);
         gl.glBindTexture(GL.GL_TEXTURE_2D, textureIndex[0]);
         gl.glBegin(GL.GL_QUADS);
-        gl.glTexCoord2f(0,0); gl.glVertex3f(-1,-1,-1);
-        gl.glTexCoord2f(0,1); gl.glVertex3f(-1,1,-1);
-        gl.glTexCoord2f(1,1); gl.glVertex3f(1,1,-1);
-        gl.glTexCoord2f(1,0); gl.glVertex3f(1,-1,-1);
+        gl.glTexCoord2f(0,0); gl.glVertex2f(-1,-1);
+        gl.glTexCoord2f(0,1); gl.glVertex2f(-1,1);
+        gl.glTexCoord2f(1,1); gl.glVertex2f(1,1);
+        gl.glTexCoord2f(1,0); gl.glVertex2f(1,-1);
         gl.glEnd();
         gl.glDisable(GL.GL_BLEND);
     }
 
     public void DrawMan(GL gl){
+        // If player dead, don't draw the man (disappear on death)
+        if(health <= 0) return;
+
         gl.glPushMatrix();
         gl.glScaled(0.1,0.1,1);
         gl.glTranslated(ManTranslateXValue, ManTranslateYValue,0);
@@ -136,45 +641,90 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
 
         if(dx != 0 || dy != 0){
             rotateAngleValue = (int)Math.toDegrees(Math.atan2(dy, dx)) - 90;
+            double len = Math.sqrt(dx*dx + dy*dy);
+            facingX = dx / len;
+            facingY = dy / len;
+
+            // animation sequence 1->2->3->4->1...
+            animCounter++;
+            if(animCounter >= animDelay){
+                animCounter = 0;
+                control = control % 4 + 1;
+            }
+        } else {
+            control = 1;
+            animCounter = 0;
         }
+
+        double minX = -9.5;
+        double maxX =  9.5;
+        double minY = -9.5;
+        double maxY =  9.5;
+
+        if (ManTranslateXValue < minX) ManTranslateXValue = minX;
+        if (ManTranslateXValue > maxX) ManTranslateXValue = maxX;
+        if (ManTranslateYValue < minY) ManTranslateYValue = minY;
+        if (ManTranslateYValue > maxY) ManTranslateYValue = maxY;
     }
 
     public void handleBullets(GL gl){
-        // مقياس الجندي
         double manScale = 0.1;
+        double bulletScale = bulletRenderScale;
 
-        double localOffsetX = 0.0;
-        double localOffsetY = 1.0;
+        double localMuzzleX = 0;
+        double localMuzzleY = 1.4;
+
+        double angRadForTransform = Math.toRadians(rotateAngleValue);
+        double cosA = Math.cos(angRadForTransform);
+        double sinA = Math.sin(angRadForTransform);
+        double rotLocalX = cosA * localMuzzleX - sinA * localMuzzleY;
+        double rotLocalY = sinA * localMuzzleX + cosA * localMuzzleY;
+
+        double transX = rotLocalX + ManTranslateXValue;
+        double transY = rotLocalY + ManTranslateYValue;
+
+        double scaleFactorForBullet = manScale / bulletScale;
+        double worldMuzzleX_forBulletSpace = transX * scaleFactorForBullet;
+        double worldMuzzleY_forBulletSpace = transY * scaleFactorForBullet;
 
         if(fire && bulletsShot < bulletsToShoot){
-            fireCounter++;
-            if(fireCounter % 20 == 0){
+            if(shotCooldown == 0){
                 double angleRad = Math.toRadians(rotateAngleValue + 90);
+                double fx = Math.cos(angleRad);
+                double fy = Math.sin(angleRad);
 
-                double rotatedOffsetX = localOffsetX * Math.cos(angleRad) - localOffsetY * Math.sin(angleRad);
-                double rotatedOffsetY = localOffsetX * Math.sin(angleRad) + localOffsetY * Math.cos(angleRad);
+                if(bulletsCount < MAX_BULLETS){
+                    bulletsX[bulletsCount] = worldMuzzleX_forBulletSpace;
+                    bulletsY[bulletsCount] = worldMuzzleY_forBulletSpace;
 
-                double startX = ManTranslateXValue + rotatedOffsetX * manScale;
-                double startY = ManTranslateYValue + rotatedOffsetY * manScale;
+                    // increased bullet speed from 0.05 -> 0.08 for a noticeable but not extreme change
+                    double speed = 0.08 * (manScale / 0.1);
+                    bulletsSpeedX[bulletsCount] = speed * fx;
+                    bulletsSpeedY[bulletsCount] = speed * fy;
 
-                bulletsX.add(startX);
-                bulletsY.add(startY);
-
-                double speed = 0.05;
-                bulletsSpeedX.add(speed * Math.cos(angleRad));
-                bulletsSpeedY.add(speed * Math.sin(angleRad));
+                    bulletsCount++;
+                }
 
                 bulletsShot++;
+                shotCooldown = fireDelayFrames;
             }
         }
 
-        for(int i=0; i<bulletsX.size(); i++){
-            bulletsX.set(i, bulletsX.get(i) + bulletsSpeedX.get(i));
-            bulletsY.set(i, bulletsY.get(i) + bulletsSpeedY.get(i));
+        if(!fire){
+            bulletsShot = 0;
+        }
+
+        // update & draw bullets
+        for(int i = 0; i < bulletsCount; i++){
+            bulletsX[i] += bulletsSpeedX[i];
+            bulletsY[i] += bulletsSpeedY[i];
+
+            double angleDegBullet = Math.toDegrees(Math.atan2(bulletsSpeedY[i], bulletsSpeedX[i])) - 90;
 
             gl.glPushMatrix();
-            gl.glScaled(0.05,0.05,1);
-            gl.glTranslated(bulletsX.get(i), bulletsY.get(i), 0);
+            gl.glScaled(bulletRenderScale, bulletRenderScale, 1);
+            gl.glTranslated(bulletsX[i], bulletsY[i], 0);
+            gl.glRotated(angleDegBullet, 0, 0, 1);
             gl.glEnable(GL.GL_BLEND);
             gl.glBindTexture(GL.GL_TEXTURE_2D, textureIndex[5]);
             gl.glBegin(GL.GL_QUADS);
@@ -187,33 +737,78 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             gl.glPopMatrix();
         }
 
+        // reset after shooting limit reached
         if(bulletsShot >= bulletsToShoot){
             fire = false;
             bulletsShot = 0;
-            fireCounter = 0;
         }
+
+        // Cleanup bullets that go far away
+        int write = 0;
+        double bound = 100.0;
+        for(int i=0;i<bulletsCount;i++){
+            if(Math.abs(bulletsX[i]) <= bound && Math.abs(bulletsY[i]) <= bound){
+                if(write != i){
+                    bulletsX[write] = bulletsX[i];
+                    bulletsY[write] = bulletsY[i];
+                    bulletsSpeedX[write] = bulletsSpeedX[i];
+                    bulletsSpeedY[write] = bulletsSpeedY[i];
+                }
+                write++;
+            }
+        }
+        bulletsCount = write;
     }
 
-
     public void updateAndDrawAliens(GL gl) {
-        for(int i = 0; i < alienX.size(); i++){
-            double dx = ManTranslateXValue - alienX.get(i);
-            double dy = ManTranslateYValue - alienY.get(i);
-            double length = Math.sqrt(dx*dx + dy*dy);
-            if(length != 0){
-                dx /= length;
-                dy /= length;
-            }
-            double speed = alienSpeed.get(i);
-            alienX.set(i, alienX.get(i) + dx * speed);
-            alienY.set(i, alienY.get(i) + dy * speed);
+        // Update aliens with wandering behavior and bounce inside frame bounds:
+        // We will compute stored bounds depending on level:
+        double storedMin, storedMax;
+        if(level == 1){
+            // preserve previous behavior exactly (stored units)
+            storedMin = -9.5;
+            storedMax = 9.5;
+        } else {
+            // level 2: world bounds must be -1..1 -> convert to stored units
+            storedMin = -1.0 / alienRenderScale;
+            storedMax =  1.0 / alienRenderScale;
         }
 
-        // رسم كل alien
-        for(int i = 0; i < alienX.size(); i++){
+        double invScale = 1.0 / alienRenderScale; // used to convert world-delta -> stored-delta
+
+        for(int i = 0; i < alienCount; i++){
+            // small random turn (less jitter)
+            alienAngle[i] += (Math.random() - 0.5) * 0.15;
+            // compute movement in world-space (so speeds behave consistently across levels)
+            double worldDx = Math.cos(alienAngle[i]) * alienSpeed[i];
+            double worldDy = Math.sin(alienAngle[i]) * alienSpeed[i];
+
+            // convert world-delta to stored-units and apply
+            alienX[i] += worldDx * invScale;
+            alienY[i] += worldDy * invScale;
+
+            // bounce on walls — reflect angle and clamp position so it doesn't go outside (walls = frame bounds)
+            if(alienX[i] < storedMin){
+                alienX[i] = storedMin;
+                alienAngle[i] = Math.PI - alienAngle[i];
+            } else if(alienX[i] > storedMax){
+                alienX[i] = storedMax;
+                alienAngle[i] = Math.PI - alienAngle[i];
+            }
+            if(alienY[i] < storedMin){
+                alienY[i] = storedMin;
+                alienAngle[i] = -alienAngle[i];
+            } else if(alienY[i] > storedMax){
+                alienY[i] = storedMax;
+                alienAngle[i] = -alienAngle[i];
+            }
+        }
+
+        // draw aliens using current alienRenderScale
+        for(int i = 0; i < alienCount; i++){
             gl.glPushMatrix();
-            gl.glScaled(0.1, 0.1, 1);
-            gl.glTranslated(alienX.get(i), alienY.get(i), 0);
+            gl.glScaled(alienRenderScale, alienRenderScale, 1);
+            gl.glTranslated(alienX[i], alienY[i], 0);
             gl.glEnable(GL.GL_BLEND);
             gl.glBindTexture(GL.GL_TEXTURE_2D, textureIndex[6]);
             gl.glBegin(GL.GL_QUADS);
@@ -226,19 +821,79 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             gl.glPopMatrix();
         }
 
-        for(int i = alienX.size() - 1; i >= 0; i--){
-            for(int j = bulletsX.size() - 1; j >= 0; j--){
-                double dx = bulletsX.get(j) - alienX.get(i);
-                double dy = bulletsY.get(j) - alienY.get(i);
-                if(Math.sqrt(dx*dx + dy*dy) < 0.1){ // مسافة الاصطدام
-                    alienX.remove(i);
-                    alienY.remove(i);
-                    alienSpeed.remove(i);
-                    bulletsX.remove(j);
-                    bulletsY.remove(j);
-                    bulletsSpeedX.remove(j);
-                    bulletsSpeedY.remove(j);
-                    break;
+        // collisions: bullets vs aliens, using screen-space positions derived from render scales
+        double collisionThreshold = Math.max(0.12, alienRenderScale * 1.2); // tuneable
+
+        for(int ai = alienCount - 1; ai >= 0; ai--){
+            boolean alienRemoved = false;
+            for(int bi = bulletsCount - 1; bi >= 0; bi--){ // iterate backwards so removals safe
+                // compute screen-space centers
+                double bulletScreenX = bulletRenderScale * bulletsX[bi];
+                double bulletScreenY = bulletRenderScale * bulletsY[bi];
+                double alienScreenX = alienRenderScale * alienX[ai];
+                double alienScreenY = alienRenderScale * alienY[ai];
+
+                double dx = bulletScreenX - alienScreenX;
+                double dy = bulletScreenY - alienScreenY;
+                if(Math.sqrt(dx*dx + dy*dy) < collisionThreshold){
+                    // remove alien ai by shifting later elements left
+                    for(int k = ai; k < alienCount - 1; k++){
+                        alienX[k] = alienX[k+1];
+                        alienY[k] = alienY[k+1];
+                        alienSpeed[k] = alienSpeed[k+1];
+                        alienAngle[k] = alienAngle[k+1];
+                    }
+                    alienCount--;
+
+                    // remove only the bullet bi by shifting later bullets left
+                    for(int k = bi; k < bulletsCount - 1; k++){
+                        bulletsX[k] = bulletsX[k+1];
+                        bulletsY[k] = bulletsY[k+1];
+                        bulletsSpeedX[k] = bulletsSpeedX[k+1];
+                        bulletsSpeedY[k] = bulletsSpeedY[k+1];
+                    }
+                    bulletsCount--;
+
+                    alienRemoved = true;
+                    break; // break bullets loop for this alien (we removed it)
+                }
+            }
+            if(alienRemoved){
+                // alien removed; continue with next ai (already shifted)
+            }
+        }
+
+        // --- PLAYER <-> ALIEN COLLISIONS (damage) ---
+        // compute player screen position (because DrawMan uses glScaled(0.1) then glTranslated)
+        double manScreenX = 0.1 * ManTranslateXValue;
+        double manScreenY = 0.1 * ManTranslateYValue;
+        double playerCollisionRadius = 0.12; // tuneable
+
+        for(int i = alienCount - 1; i >= 0; i--){
+            double alienScreenX = alienRenderScale * alienX[i];
+            double alienScreenY = alienRenderScale * alienY[i];
+            double dx = alienScreenX - manScreenX;
+            double dy = alienScreenY - manScreenY;
+            double dist = Math.sqrt(dx*dx + dy*dy);
+
+            if(dist < playerCollisionRadius){
+                // hit detected
+                if(hitCooldownFrames == 0 && health > 0 && !gameOverShown){
+                    health -= 10; // each touch reduces 10 HP (tuneable)
+                    if(health < 0) health = 0;
+                    hitCooldownFrames = HIT_COOLDOWN_MAX;
+
+                    // trigger visual flash
+                    flashFrames = FLASH_MAX;
+
+                    // trigger screen shake
+                    shakeFrames = SHAKE_MAX;
+
+                    // optional: push alien away a bit to avoid immediate repeated collisions
+                    double pushDirX = dx == 0 ? 0.01 : dx / dist * 0.02;
+                    double pushDirY = dy == 0 ? 0.01 : dy / dist * 0.02;
+                    alienX[i] += pushDirX / alienRenderScale;
+                    alienY[i] += pushDirY / alienRenderScale;
                 }
             }
         }
@@ -267,5 +922,16 @@ public class MyFrame_GLEventListener implements GLEventListener, KeyListener {
             case KeyEvent.VK_RIGHT: right=false; break;
             case KeyEvent.VK_SPACE: fire=false; break;
         }
+    }
+
+    private String formatTime(long ms) {
+        long sec = ms / 1000;
+        long min = sec / 60;
+        sec = sec % 60;
+        return String.format("%02d:%02d", min, sec);
+    }
+
+    private double randNum(double min, double max) {
+        return min + Math.random() * (max - min);
     }
 }
